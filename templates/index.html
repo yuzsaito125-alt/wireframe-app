@@ -233,6 +233,7 @@
     audioCtx.resume().then(() => {
       if (scene === 'bird')  startBirdSong(1);
       if (scene === 'bird2') startBirdSong(2);
+      if (scene === 'car')   { carLightBlink = 0; startEngine(); }
     });
   }
 
@@ -316,10 +317,12 @@
       document.getElementById('btn' + id.charAt(0).toUpperCase() + id.slice(1))
         .classList.toggle('active', s === id);
     });
-    if (s === 'bird')  startBirdSong(1);
-    else               stopBirdSong(1);
-    if (s === 'bird2') startBirdSong(2);
-    else               stopBirdSong(2);
+    if (s === 'bird')  { startBirdSong(1); stopEngine(); }
+    else               { stopBirdSong(1); }
+    if (s === 'bird2') { startBirdSong(2); stopEngine(); }
+    else               { stopBirdSong(2); }
+    if (s === 'car')   { carLightBlink = 0; startEngine(); }
+    else               { stopEngine(); }
   }
   // 初期ボタン状態
   document.getElementById('btnBird').classList.add('active');
@@ -558,345 +561,206 @@
   }
 
   // =============================================
-  //  MR-S 2005 — 3面図参考、斜め前方視点
-  //  座標系: 右向き走行、原点=車体中心底面
-  //  斜め前方視点 = 側面+前面+上面を合成
+  //  MR-S 2005 — 前面図（3面図(3)）をほぼそのまま線画
   // =============================================
-  function drawMRS(s, spin) {
+  let carLightBlink = 0;
 
-    ctx.shadowColor = '#aef';
-    ctx.shadowBlur  = 10 * s;
-    ctx.strokeStyle = '#aef';
-    ctx.lineWidth   = 1.5;
+  function drawMRSFront(t) {
+    const W  = Math.min(CW * 0.82, 260);
+    const s  = W / 160;
+    const cx = CW / 2;
+    const cy = CH * 0.44;
 
-    // ========== 側面シルエット（右向き） ==========
-    // 3面図(2)側面を忠実に再現
-    // 全長約160s、全高約55s
+    carLightBlink += 0.016;
+    const blinkOn = carLightBlink < 1.2
+      ? Math.sin(carLightBlink * Math.PI * 5) > 0
+      : true;
 
-    // -- ボディ下ライン --
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    const C  = '#4488ff';
+    const C2 = '#2255cc';
+    const HL = '#fffaaa';
+
+    // ---- ボディ外形 ----
+    ctx.strokeStyle = C; ctx.shadowColor = C;
+    ctx.shadowBlur = 8; ctx.lineWidth = 2.0;
     ctx.beginPath();
-    // フロントバンパー下端
-    ctx.moveTo(72*s, 12*s);
-    ctx.quadraticCurveTo(76*s, 14*s, 74*s, 18*s);   // バンパー先端丸み
-    // アンダーボディ
-    ctx.lineTo(-68*s, 18*s);
-    // リアバンパー下端
-    ctx.quadraticCurveTo(-74*s, 18*s, -76*s, 12*s);
-    ctx.stroke();
+    ctx.moveTo(-62*s, -38*s);
+    ctx.quadraticCurveTo(0, -44*s, 62*s, -38*s);
+    ctx.quadraticCurveTo(72*s, -34*s, 76*s, -20*s);
+    ctx.quadraticCurveTo(78*s, -8*s,  72*s,  4*s);
+    ctx.quadraticCurveTo(70*s, 14*s,  60*s, 20*s);
+    ctx.lineTo(40*s, 24*s); ctx.lineTo(28*s, 28*s);
+    ctx.lineTo(-28*s, 28*s); ctx.lineTo(-40*s, 24*s);
+    ctx.quadraticCurveTo(-60*s, 20*s, -72*s, 4*s);
+    ctx.quadraticCurveTo(-78*s, -8*s, -76*s, -20*s);
+    ctx.quadraticCurveTo(-72*s, -34*s, -62*s, -38*s);
+    ctx.closePath(); ctx.stroke();
 
-    // -- ボディ上ライン（フロントフード〜ルーフ〜リアデッキ）--
+    // ---- ボンネットVライン ----
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
-    // フロントノーズ先端（低い）
-    ctx.moveTo(76*s, 12*s);
-    ctx.quadraticCurveTo(78*s, 4*s, 72*s, -4*s);    // ノーズ先端
-    ctx.lineTo(60*s, -8*s);                           // フードトップ（低くフラット）
-    ctx.lineTo(38*s, -8*s);                           // フード後端
-    // Aピラー（急傾斜）
-    ctx.lineTo(26*s, -42*s);
-    // ルーフ（短い）
-    ctx.lineTo(-10*s, -44*s);
-    // リアウィンドウ（急傾斜）
-    ctx.lineTo(-24*s, -32*s);
-    // リアデッキ（短い、エンジンフード）
-    ctx.lineTo(-38*s, -30*s);
-    // リアフェンダートップ（張り出し）
-    ctx.quadraticCurveTo(-52*s, -28*s, -60*s, -18*s);
-    // リアバンパー
-    ctx.quadraticCurveTo(-68*s, -10*s, -76*s, 12*s);
+    ctx.moveTo(-30*s, -38*s); ctx.lineTo(0, -20*s); ctx.lineTo(30*s, -38*s);
     ctx.stroke();
+    ctx.lineWidth = 1.0; ctx.strokeStyle = C2; ctx.shadowColor = C2;
+    line(-62*s,-38*s,-30*s,-38*s); line(62*s,-38*s,30*s,-38*s);
 
-    // -- フロントフェンダーライン --
-    ctx.beginPath();
-    ctx.moveTo(60*s, -8*s);
-    ctx.quadraticCurveTo(66*s, -6*s, 70*s, 0*s);
-    ctx.quadraticCurveTo(74*s, 6*s, 72*s, 12*s);
-    ctx.stroke();
-
-    // -- サイドシル（ドア下ライン）--
+    // ---- ヘッドライト ----
+    if (blinkOn) {
+      ctx.strokeStyle = HL; ctx.shadowColor = HL; ctx.shadowBlur = 22; ctx.lineWidth = 2.0;
+    } else {
+      ctx.strokeStyle = C2; ctx.shadowColor = C2; ctx.shadowBlur = 4;  ctx.lineWidth = 1.4;
+    }
+    ctx.beginPath(); ctx.ellipse( 42*s,-16*s,20*s,16*s,0,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(-42*s,-16*s,20*s,16*s,0,0,Math.PI*2); ctx.stroke();
     ctx.lineWidth = 1.0;
-    ctx.beginPath();
-    ctx.moveTo(38*s, 14*s);
-    ctx.lineTo(-38*s, 14*s);
-    ctx.stroke();
-
-    // -- ドアパネル --
-    ctx.lineWidth = 1.2;
-    // Aピラー下
-    line(38*s,-8*s, 36*s, 14*s);
-    // Bピラー（細い、オープンカー）
-    line(-10*s,-44*s, -12*s, 14*s);
-    // ドアハンドル
-    ctx.lineWidth = 1.0;
-    line(8*s,-18*s, 18*s,-18*s);
-    line(8*s,-18*s, 8*s,-15*s);
-    line(18*s,-18*s, 18*s,-15*s);
-
-    // -- サイドエアインテーク（MR-S特徴）--
-    ctx.beginPath();
-    ctx.moveTo(-14*s, -8*s);
-    ctx.lineTo(-28*s, -8*s);
-    ctx.lineTo(-30*s, -2*s);
-    ctx.lineTo(-14*s, -2*s);
-    ctx.closePath();
-    ctx.stroke();
-
-    // -- リアフェンダー張り出し線 --
-    ctx.beginPath();
-    ctx.moveTo(-38*s, -30*s);
-    ctx.quadraticCurveTo(-44*s, -26*s, -46*s, 14*s);
-    ctx.stroke();
-
-    // ========== 斜め前方視点：前面を右側に合成 ==========
-    // 3面図(3)前面を参考に右側面として描く
-    const px = 72*s; // 前面の基準X
-
-    // -- フロントバンパー面 --
-    ctx.lineWidth = 1.2;
-    ctx.strokeStyle = '#8ac';
-    ctx.shadowColor = '#8ac';
-    ctx.shadowBlur  = 6*s;
-    ctx.beginPath();
-    ctx.moveTo(px, 12*s);
-    ctx.lineTo(px+18*s, 10*s);
-    ctx.lineTo(px+18*s, -2*s);
-    ctx.lineTo(px, -4*s);
-    ctx.stroke();
-
-    // -- フロントフード上面 --
-    ctx.beginPath();
-    ctx.moveTo(px, -4*s);
-    ctx.lineTo(px+18*s, -2*s);
-    ctx.lineTo(px+14*s, -10*s);
-    ctx.lineTo(60*s, -8*s);
-    ctx.stroke();
-
-    // -- 丸型ヘッドライト（左右2灯）--
-    ctx.strokeStyle = '#fff8a0';
-    ctx.shadowColor = '#fff8a0';
-    ctx.shadowBlur  = 16*s;
-    ctx.lineWidth   = 1.4;
-    // 右ライト（手前）
-    ctx.beginPath();
-    ctx.ellipse(px+6*s, -1*s, 7*s, 5*s, 0, 0, Math.PI*2);
-    ctx.stroke();
-    // 左ライト（奥、小さく）
-    ctx.beginPath();
-    ctx.ellipse(px+14*s, -1*s, 5*s, 4*s, 0, 0, Math.PI*2);
-    ctx.stroke();
-    // ライト光線
-    line(px+13*s, -4*s, px+22*s, -6*s);
-    line(px+13*s, -1*s, px+23*s, -1*s);
-    line(px+13*s,  2*s, px+22*s,  4*s);
-
-    // -- フロントバンパーVライン（3面図(3)特徴）--
-    ctx.strokeStyle = '#aef';
-    ctx.shadowColor = '#aef';
-    ctx.shadowBlur  = 6*s;
-    ctx.lineWidth   = 1.0;
-    ctx.beginPath();
-    ctx.moveTo(px+4*s, 8*s);
-    ctx.lineTo(px+11*s, 14*s);
-    ctx.lineTo(px+18*s, 8*s);
-    ctx.stroke();
-
-    // -- ナンバープレートエリア --
-    ctx.lineWidth = 0.8;
-    ctx.beginPath();
-    ctx.rect(px+5*s, 10*s, 8*s, 4*s);
-    ctx.stroke();
-
-    // ========== 上面（ルーフ）を少し見せる ==========
-    ctx.strokeStyle = '#6a9aaa';
-    ctx.shadowColor = '#6a9aaa';
-    ctx.shadowBlur  = 4*s;
-    ctx.lineWidth   = 0.9;
-    ctx.beginPath();
-    ctx.moveTo(26*s, -42*s);
-    ctx.lineTo(30*s, -48*s);
-    ctx.lineTo(-6*s, -50*s);
-    ctx.lineTo(-10*s, -44*s);
-    ctx.stroke();
-    // ウィンドウ枠上
-    ctx.beginPath();
-    ctx.moveTo(30*s, -48*s);
-    ctx.lineTo(34*s, -44*s);
-    ctx.stroke();
-
-    // ========== ホイール（5スポーク）==========
-    ctx.strokeStyle = '#aef';
-    ctx.shadowColor = '#aef';
-    ctx.shadowBlur  = 8*s;
-
-    function drawWheel5(wx, wy, wr) {
-      // タイヤ
-      ctx.lineWidth = 3*s;
-      circle(wx, wy, wr);
-      // リム外周
-      ctx.lineWidth = 1.2;
-      circle(wx, wy, wr*0.78);
-      // 5スポーク
-      for (let i=0; i<5; i++) {
-        const a = spin + i * Math.PI*2/5;
-        // スポーク（太め）
-        ctx.lineWidth = 1.8*s;
-        line(wx + Math.cos(a)*wr*0.18, wy + Math.sin(a)*wr*0.18,
-             wx + Math.cos(a)*wr*0.74, wy + Math.sin(a)*wr*0.74);
-      }
-      ctx.lineWidth = 1.2;
-      // センターキャップ
-      ctx.fillStyle = '#aef';
-      fcircle(wx, wy, 3.5*s);
-      circle(wx, wy, 5*s);
+    ctx.beginPath(); ctx.ellipse( 42*s,-16*s,13*s,10*s,0,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(-42*s,-16*s,13*s,10*s,0,0,Math.PI*2); ctx.stroke();
+    if (blinkOn) {
+      ctx.fillStyle = HL; ctx.globalAlpha = 0.25;
+      ctx.beginPath(); ctx.ellipse( 42*s,-16*s,13*s,10*s,0,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(-42*s,-16*s,13*s,10*s,0,0,Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1.0;
+      ctx.strokeStyle = HL; ctx.shadowColor = HL; ctx.shadowBlur = 14; ctx.lineWidth = 0.8;
+      line( 62*s,-22*s, 82*s,-26*s); line( 62*s,-16*s, 84*s,-16*s); line( 62*s,-10*s, 82*s,-6*s);
+      line(-62*s,-22*s,-82*s,-26*s); line(-62*s,-16*s,-84*s,-16*s); line(-62*s,-10*s,-82*s,-6*s);
     }
 
-    // フロントホイール（右寄り）
-    drawWheel5(46*s, 18*s, 16*s);
-    // リアホイール（左寄り）
-    drawWheel5(-44*s, 18*s, 17*s); // リアが少し大きい
-
-    // ========== テールライト ==========
-    ctx.strokeStyle = '#f87';
-    ctx.shadowColor = '#f87';
-    ctx.shadowBlur  = 12*s;
-    ctx.lineWidth   = 1.4;
+    // ---- グリル ----
+    ctx.strokeStyle = C; ctx.shadowColor = C; ctx.shadowBlur = 6; ctx.lineWidth = 1.4;
     ctx.beginPath();
-    ctx.ellipse(-68*s, -6*s, 4*s, 7*s, 0, 0, Math.PI*2);
-    ctx.stroke();
-    // テール光
-    ctx.lineWidth = 0.8;
-    line(-72*s, -10*s, -80*s, -12*s);
-    line(-72*s,  -6*s, -82*s,  -6*s);
-    line(-72*s,  -2*s, -80*s,   0*s);
+    ctx.moveTo(-22*s,-4*s); ctx.quadraticCurveTo(0,-8*s,22*s,-4*s);
+    ctx.quadraticCurveTo(24*s,4*s,22*s,10*s); ctx.lineTo(-22*s,10*s);
+    ctx.quadraticCurveTo(-24*s,4*s,-22*s,-4*s); ctx.stroke();
+    ctx.lineWidth = 0.8; ctx.strokeStyle = C2; ctx.shadowColor = C2;
+    for (let i=0;i<4;i++) line(-20*s,-2*s+i*3.5*s,20*s,-2*s+i*3.5*s);
+
+    // ---- ナンバープレート ----
+    ctx.strokeStyle = C; ctx.shadowColor = C; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.rect(-18*s,12*s,36*s,10*s); ctx.stroke();
+
+    // ---- フォグランプ ----
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.ellipse( 56*s,10*s,8*s,5*s,0,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(-56*s,10*s,8*s,5*s,0,0,Math.PI*2); ctx.stroke();
+
+    // ---- バンパー下スリット ----
+    ctx.lineWidth = 0.8; ctx.strokeStyle = C2; ctx.shadowColor = C2;
+    for (let i=-2;i<=2;i++) line(i*8*s,24*s,i*8*s,28*s);
+
+    // ---- サイドミラー ----
+    ctx.strokeStyle = C; ctx.shadowColor = C; ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(72*s,-28*s); ctx.lineTo(88*s,-32*s);
+    ctx.lineTo(90*s,-22*s); ctx.lineTo(74*s,-20*s); ctx.closePath(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-72*s,-28*s); ctx.lineTo(-88*s,-32*s);
+    ctx.lineTo(-90*s,-22*s); ctx.lineTo(-74*s,-20*s); ctx.closePath(); ctx.stroke();
+
+    // ---- ホイール ----
+    ctx.strokeStyle = C; ctx.shadowColor = C; ctx.shadowBlur = 8;
+    const spin = t * 1.5;
+    function drawFW(wx) {
+      ctx.lineWidth = 4.0; ctx.strokeStyle = C2; ctx.shadowColor = C2;
+      circle(wx,42*s,28*s);
+      ctx.lineWidth = 1.8; ctx.strokeStyle = C; ctx.shadowColor = C;
+      circle(wx,42*s,22*s);
+      for (let i=0;i<5;i++) {
+        const a = spin + i*Math.PI*2/5;
+        ctx.lineWidth = 2.2;
+        line(wx+Math.cos(a)*5*s, 42*s+Math.sin(a)*5*s,
+             wx+Math.cos(a)*20*s,42*s+Math.sin(a)*20*s);
+      }
+      ctx.lineWidth = 1.2; circle(wx,42*s,5*s);
+      ctx.fillStyle = C; fcircle(wx,42*s,3*s);
+    }
+    drawFW(-50*s); drawFW(50*s);
+
+    ctx.restore();
+    ctx.shadowBlur = 0; ctx.fillStyle = '#2a5a7a';
+    ctx.font = '10px monospace';
+    ctx.fillText('TOYOTA MR-S 2005', 8, CH-10);
+  }
+
+  // ========== エンジン音 ==========
+  let engineNodes  = null;
+  let engineGain   = null;
+  let engineActive = false;
+
+  function startEngine() {
+    if (!audioCtx || engineActive) return;
+    engineActive = true;
+    engineGain = audioCtx.createGain();
+    engineGain.connect(masterGain);
+    engineGain.gain.value = 0;
+
+    const specs = [
+      { type:'sawtooth', freq:82,  vol:0.55 },
+      { type:'square',   freq:164, vol:0.18 },
+      { type:'square',   freq:246, vol:0.10 },
+    ];
+    engineNodes = specs.map(sp => {
+      const osc = audioCtx.createOscillator();
+      const g   = audioCtx.createGain();
+      osc.type = sp.type;
+      osc.frequency.value = sp.freq;
+      g.gain.value = sp.vol;
+      osc.connect(g); g.connect(engineGain);
+      osc.start();
+      return osc;
+    });
+
+    const now = audioCtx.currentTime;
+    engineGain.gain.setValueAtTime(0, now);
+    engineGain.gain.linearRampToValueAtTime(0.14, now + 0.8);
+
+    // 回転数変動（アイドリング→吹け上がり→落ち着く）
+    [[82,130,95,82],[164,260,190,164],[246,390,285,246]].forEach((fs,i) => {
+      const osc = engineNodes[i];
+      osc.frequency.setValueAtTime(fs[0], now);
+      osc.frequency.linearRampToValueAtTime(fs[1], now+1.5);
+      osc.frequency.linearRampToValueAtTime(fs[2], now+2.5);
+      osc.frequency.linearRampToValueAtTime(fs[3], now+4.5);
+    });
+  }
+
+  function stopEngine() {
+    if (!engineActive || !engineGain) return;
+    engineGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
+    setTimeout(() => {
+      engineNodes && engineNodes.forEach(o => { try { o.stop(); } catch(e){} });
+      engineNodes = null; engineGain = null; engineActive = false;
+    }, 600);
   }
 
   // ========== 路面描画 ==========
-  function drawRoad(t) {
-    const vp = { x: CW*0.5, y: CH*0.22 }; // 消失点
-    const roadY = CH * 0.82;               // 手前の道路端
-
-    // アスファルト面（台形）
+  function drawRoad() {
+    const vp    = { x: CW*0.5, y: CH*0.22 };
+    const roadY = CH * 0.82;
     ctx.fillStyle = '#0a1520';
     ctx.beginPath();
-    ctx.moveTo(vp.x - 8, vp.y);
-    ctx.lineTo(vp.x + 8, vp.y);
-    ctx.lineTo(CW*0.92, roadY);
-    ctx.lineTo(CW*0.08, roadY);
-    ctx.closePath();
-    ctx.fill();
-
-    // 路面グリッド線（奥行き感）
-    ctx.strokeStyle = '#1a3040';
-    ctx.lineWidth   = 0.6;
-    ctx.shadowBlur  = 0;
-
-    // 縦線（消失点へ収束）
-    const laneCount = 8;
-    for (let i = 0; i <= laneCount; i++) {
-      const fx = vp.x + (i/laneCount - 0.5) * 16;
-      const bx = CW*0.08 + (CW*0.84) * (i/laneCount);
-      ctx.beginPath();
-      ctx.moveTo(fx, vp.y);
-      ctx.lineTo(bx, roadY);
-      ctx.stroke();
+    ctx.moveTo(vp.x-8,vp.y); ctx.lineTo(vp.x+8,vp.y);
+    ctx.lineTo(CW*0.92,roadY); ctx.lineTo(CW*0.08,roadY);
+    ctx.closePath(); ctx.fill();
+    ctx.shadowBlur = 0; ctx.strokeStyle = '#1a3040'; ctx.lineWidth = 0.6;
+    for (let i=0;i<=8;i++) {
+      const fx=vp.x+(i/8-0.5)*16, bx=CW*0.08+(CW*0.84)*(i/8);
+      ctx.beginPath(); ctx.moveTo(fx,vp.y); ctx.lineTo(bx,roadY); ctx.stroke();
     }
-
-    // 横線（等間隔→遠近で圧縮）
-    const rows = 10;
-    for (let j = 1; j < rows; j++) {
-      const ratio = j / rows;
-      // 遠近感：手前ほど間隔広い
-      const perspRatio = ratio * ratio;
-      const y  = vp.y + (roadY - vp.y) * perspRatio;
-      const hw = 8 + (CW*0.84/2) * perspRatio;
-      ctx.beginPath();
-      ctx.moveTo(vp.x - hw, y);
-      ctx.lineTo(vp.x + hw, y);
-      ctx.stroke();
+    for (let j=1;j<10;j++) {
+      const p=(j/10)*(j/10), y=vp.y+(roadY-vp.y)*p, hw=8+(CW*0.84/2)*p;
+      ctx.beginPath(); ctx.moveTo(vp.x-hw,y); ctx.lineTo(vp.x+hw,y); ctx.stroke();
     }
-
-    // センターライン（破線、スクロール）
-    const dashLen  = 18;
-    const gapLen   = 14;
-    const totalLen = dashLen + gapLen;
-    const scroll   = (t * 60) % totalLen;
-
-    ctx.strokeStyle = '#2a5070';
-    ctx.lineWidth   = 1.2;
-
-    for (let j = 0; j < rows * 2; j++) {
-      const ratio = ((j * (dashLen / (rows*2))) - scroll/rows) / rows;
-      if (ratio < 0 || ratio > 1) continue;
-      const perspRatio = ratio * ratio;
-      const y1 = vp.y + (roadY - vp.y) * perspRatio;
-      const ratio2 = ((j * (dashLen / (rows*2)) + dashLen/rows) - scroll/rows) / rows;
-      if (ratio2 < 0) continue;
-      const perspRatio2 = Math.min(ratio2 * ratio2, 1);
-      const y2 = vp.y + (roadY - vp.y) * perspRatio2;
-      const x1 = vp.x + (vp.x - CW*0.08) * (perspRatio - 1) * 0 ;
-      ctx.beginPath();
-      ctx.moveTo(vp.x, y1);
-      ctx.lineTo(vp.x, y2);
-      ctx.stroke();
-    }
-
-    // 路肩ライン（白線）
-    ctx.strokeStyle = '#2a4a5a';
-    ctx.lineWidth   = 1.0;
-    // 左路肩
-    ctx.beginPath();
-    ctx.moveTo(vp.x - 6, vp.y);
-    ctx.lineTo(CW*0.10, roadY);
-    ctx.stroke();
-    // 右路肩
-    ctx.beginPath();
-    ctx.moveTo(vp.x + 6, vp.y);
-    ctx.lineTo(CW*0.90, roadY);
-    ctx.stroke();
-
-    // ガードレール風（左右）
-    ctx.strokeStyle = '#1a3a4a';
-    ctx.lineWidth   = 0.8;
-    ctx.beginPath();
-    ctx.moveTo(vp.x - 7, vp.y - 2);
-    ctx.lineTo(CW*0.06, roadY - 8);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(vp.x + 7, vp.y - 2);
-    ctx.lineTo(CW*0.94, roadY - 8);
-    ctx.stroke();
+    ctx.strokeStyle='#2a4a5a'; ctx.lineWidth=1.0;
+    ctx.beginPath(); ctx.moveTo(vp.x-6,vp.y); ctx.lineTo(CW*0.10,roadY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(vp.x+6,vp.y); ctx.lineTo(CW*0.90,roadY); ctx.stroke();
   }
 
   function drawCar(t) {
-    // 路面
-    drawRoad(t);
-
-    // 車の動き: u=0(奥・小) → u=1(手前・大) → フェードアウト
-    const period = 5.0;
-    const u = (t % period) / period;
-
-    // スケール: 奥=0.18、手前=1.0
-    const scale = 0.18 + Math.pow(u, 1.4) * 0.82;
-
-    // 位置: 消失点付近から手前中央へ
-    const vpy = CH * 0.22;
-    const cx  = CW * 0.50 - u * CW * 0.04;
-    const cy  = vpy + u * (CH * 0.60 - vpy) + 18 * scale;
-
-    // フェードアウト
-    const alpha = u > 0.82 ? 1 - (u - 0.82) / 0.18 : 1;
-
-    ctx.globalAlpha = alpha;
-    ctx.save();
-    ctx.translate(cx, cy);
-    drawMRS(scale, t * 5);
-    ctx.restore();
-    ctx.globalAlpha = 1;
-
-    // ラベル
-    ctx.shadowBlur  = 0;
-    ctx.fillStyle   = '#3a6a8a';
-    ctx.font        = '10px monospace';
-    ctx.fillText('TOYOTA MR-S 2005', 8, CH - 10);
+    drawRoad();
+    drawMRSFront(t);
   }
 
   // =============================================
