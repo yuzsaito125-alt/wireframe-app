@@ -132,6 +132,10 @@
     <div class="start-btn">▶ タップして開始</div>
     <p>音声・アニメーションが起動します</p>
   </div>
+  <!-- デバッグ表示 -->
+  <div id="debugInfo" style="display:none; position:fixed; top:0; left:0; right:0;
+    background:#111; color:#0f0; font-size:11px; padding:6px 10px;
+    z-index:9998; word-break:break-all; line-height:1.6;"></div>
 
   <h1>Wireframe Animation</h1>
   <div class="canvas-wrap" id="canvasWrap">
@@ -215,8 +219,6 @@
   let muted      = false;
 
   function startApp() {
-    // ユーザータップの同期処理内でAudioContextを生成・resume
-    // これがSafariで音を出す唯一確実な方法
     const AC = window.AudioContext || window.webkitAudioContext;
     audioCtx   = new AC();
     masterGain = audioCtx.createGain();
@@ -230,11 +232,24 @@
     src.connect(audioCtx.destination);
     src.start(0);
 
+    // デバッグ情報を画面上部に表示
+    const dbg = document.getElementById('debugInfo');
+    dbg.style.display = 'block';
+    const log = (msg) => { dbg.innerHTML += msg + '<br>'; };
+    log(`protocol: ${location.protocol}`);
+    log(`AC exists: ${!!AC}`);
+    log(`state直後: ${audioCtx.state}`);
+    setTimeout(() => log(`state 300ms後: ${audioCtx.state}`), 300);
+    setTimeout(() => log(`state 1s後: ${audioCtx.state}`), 1000);
+
     // オーバーレイを消す
     document.getElementById('startOverlay').style.display = 'none';
 
     // 鳥シーンなら即さえずり開始
-    if (scene === 'bird') startBirdSong(1);
+    if (scene === 'bird') {
+      log('startBirdSong呼び出し');
+      startBirdSong(1);
+    }
   }
 
   function toggleMute() {
@@ -251,7 +266,9 @@
   }
 
   function playTone(freq, startDelay, duration, type = 'sine', vol = 0.18) {
-    if (!audioCtx || audioCtx.state !== 'running') return;
+    const dbg = document.getElementById('debugInfo');
+    if (!audioCtx) { dbg.innerHTML += `playTone: audioCtx null<br>`; return; }
+    if (audioCtx.state !== 'running') { dbg.innerHTML += `playTone: state=${audioCtx.state}<br>`; return; }
     const now  = audioCtx.currentTime + startDelay;
     const osc  = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
