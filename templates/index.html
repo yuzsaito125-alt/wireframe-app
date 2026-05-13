@@ -92,9 +92,47 @@
     }
     .qr-panel p { color: #7af; font-size: 0.75rem; letter-spacing: 0.1em; margin-bottom: 8px; }
     .qr-panel img { width: 180px; height: 180px; border-radius: 8px; border: 1px solid #1a2a4a; }
+
+    /* 起動オーバーレイ */
+    #startOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(5,5,16,0.92);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      cursor: pointer;
+    }
+    #startOverlay .start-btn {
+      border: 2px solid #7af;
+      color: #7af;
+      font-size: 1.3rem;
+      padding: 18px 40px;
+      border-radius: 40px;
+      letter-spacing: 0.15em;
+      animation: pulse 1.5s infinite;
+    }
+    #startOverlay p {
+      color: #4a7aaa;
+      font-size: 0.8rem;
+      margin-top: 16px;
+      letter-spacing: 0.1em;
+    }
+    @keyframes pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(119,170,255,0.4); }
+      50%      { box-shadow: 0 0 0 12px rgba(119,170,255,0); }
+    }
   </style>
 </head>
 <body>
+  <!-- 起動オーバーレイ：このタップでAudioContextを初期化 -->
+  <div id="startOverlay" onclick="startApp()">
+    <div class="start-btn">▶ タップして開始</div>
+    <p>音声・アニメーションが起動します</p>
+  </div>
+
   <h1>Wireframe Animation</h1>
   <div class="canvas-wrap" id="canvasWrap">
     <video id="video" autoplay playsinline muted></video>
@@ -170,60 +208,36 @@
   }
 
   // =============================================
-  //  Web Audio — スマホ対応強化版
+  //  起動オーバーレイ — このタップでSafariのAudio制限を解除
   // =============================================
-  let audioCtx = null;
-  let muted    = false;
+  let audioCtx   = null;
   let masterGain = null;
-  let audioUnlocked = false;
+  let muted      = false;
 
-  function ensureAudio() {
-    if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
-      showHttpsWarning();
-      return false;
-    }
-    if (!audioCtx) {
-      // Safari用: ユーザー操作のコールスタック内で生成する
-      const AC = window.AudioContext || window.webkitAudioContext;
-      audioCtx   = new AC();
-      masterGain = audioCtx.createGain();
-      masterGain.connect(audioCtx.destination);
-      masterGain.gain.value = muted ? 0 : 1;
-    }
-    // suspended状態を同期的に解除（Safariはこれが必須）
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume().then(() => { audioUnlocked = true; });
-    } else {
-      audioUnlocked = true;
-    }
-    return true;
-  }
+  function startApp() {
+    // ユーザータップの同期処理内でAudioContextを生成・resume
+    // これがSafariで音を出す唯一確実な方法
+    const AC = window.AudioContext || window.webkitAudioContext;
+    audioCtx   = new AC();
+    masterGain = audioCtx.createGain();
+    masterGain.connect(audioCtx.destination);
+    masterGain.gain.value = 1;
 
-  // HTTPS警告バナー（一度だけ表示）
-  let warnShown = false;
-  function showHttpsWarning() {
-    if (warnShown) return;
-    warnShown = true;
-    const div = document.createElement('div');
-    div.style.cssText = `
-      position:fixed; bottom:0; left:0; right:0; z-index:999;
-      background:#1a1a00; border-top:1px solid #aa8800;
-      color:#ffcc44; font-size:0.78rem; padding:10px 14px;
-      text-align:center; line-height:1.6;
-    `;
-    div.innerHTML = `
-      🔇 <b>iPhoneで音・カメラを使うにはHTTPS接続が必要です</b><br>
-      ngrokを起動して <code>https://xxxx.ngrok-free.app</code> からアクセスしてください
-      <button onclick="this.parentElement.remove()" style="
-        margin-left:12px; background:transparent; border:1px solid #aa8800;
-        color:#ffcc44; border-radius:10px; padding:2px 10px; cursor:pointer;
-      ">✕</button>
-    `;
-    document.body.appendChild(div);
+    // 無音バッファを即再生してSafariのロックを解除
+    const buf = audioCtx.createBuffer(1, 1, 22050);
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(audioCtx.destination);
+    src.start(0);
+
+    // オーバーレイを消す
+    document.getElementById('startOverlay').style.display = 'none';
+
+    // 鳥シーンなら即さえずり開始
+    if (scene === 'bird') startBirdSong(1);
   }
 
   function toggleMute() {
-    ensureAudio(); // ミュートボタンタップでも解除
     muted = !muted;
     if (masterGain) masterGain.gain.value = muted ? 0 : 1;
     const btn = document.getElementById('btnMute');
@@ -237,34 +251,25 @@
   }
 
   function playTone(freq, startDelay, duration, type = 'sine', vol = 0.18) {
-    if (!audioCtx) return;
-    // AudioContextがrunningになってから鳴らす
-    const doPlay = () => {
-      if (audioCtx.state !== 'running') return;
-      const now  = audioCtx.currentTime + startDelay;
-      const osc  = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.connect(gain);
-      gain.connect(masterGain);
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, now);
-      osc.frequency.exponentialRampToValueAtTime(freq * 1.5, now + duration * 0.5);
-      osc.frequency.exponentialRampToValueAtTime(freq * 1.2, now + duration);
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(vol, now + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-      osc.start(now);
-      osc.stop(now + duration + 0.05);
-    };
-    if (audioCtx.state === 'running') {
-      doPlay();
-    } else {
-      audioCtx.resume().then(doPlay);
-    }
+    if (!audioCtx || audioCtx.state !== 'running') return;
+    const now  = audioCtx.currentTime + startDelay;
+    const osc  = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(masterGain);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, now);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.5, now + duration * 0.5);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.2, now + duration);
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(vol, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    osc.start(now);
+    osc.stop(now + duration + 0.05);
   }
 
   function birdSong() {
-    if (!ensureAudio()) return;
+    if (!audioCtx) return;
     playTone(2800, 0.00, 0.18);
     playTone(3200, 0.13, 0.16);
     playTone(2600, 0.32, 0.18);
@@ -273,7 +278,7 @@
 
   // bird2用（少し違うさえずり）
   function birdSong2() {
-    if (!ensureAudio()) return;
+    if (!audioCtx) return;
     playTone(3400, 0.00, 0.12);
     playTone(2900, 0.10, 0.14);
     playTone(3600, 0.22, 0.10);
@@ -308,8 +313,6 @@
 
   function setScene(s) {
     scene = s;
-    // ボタンタップのコールスタック内でAudioContext解除（Safari必須）
-    ensureAudio();
     ['bird','bird2','car'].forEach(id => {
       document.getElementById('btn' + id.charAt(0).toUpperCase() + id.slice(1))
         .classList.toggle('active', s === id);
@@ -719,15 +722,6 @@
     const p = document.getElementById('qrPanel');
     p.style.display = p.style.display==='none' ? 'block' : 'none';
   }
-
-  // 最初のタップでAudioContext解除（スマホ必須）
-  function unlockAudio() {
-    if (!ensureAudio()) return;
-    if (scene==='bird')  startBirdSong(1);
-    if (scene==='bird2') startBirdSong(2);
-  }
-  document.addEventListener('touchstart', unlockAudio, { once: true });
-  document.addEventListener('click',      unlockAudio, { once: true });
   </script>
 </body>
 </html>

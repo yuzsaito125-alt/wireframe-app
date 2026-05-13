@@ -1,0 +1,12 @@
+コードを更新したいとき
+ローカルで修正後：
+
+cd /d "e:\@YuzuruSaito\仕事フォルダ\@kiro\wireframe-app"
+git add .
+git commit -m "更新内容のメモ"
+git push
+
+ローカル起動（開発時）
+cd /d "e:\@YuzuruSaito\仕事フォルダ\@kiro\wireframe-app"
+python app.py
+→ http://localhost:5000
