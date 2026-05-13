@@ -178,19 +178,24 @@
   let audioUnlocked = false;
 
   function ensureAudio() {
-    // iPhoneはHTTPSでないとWeb Audio API不可
     if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
       showHttpsWarning();
       return false;
     }
     if (!audioCtx) {
-      audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
+      // Safari用: ユーザー操作のコールスタック内で生成する
+      const AC = window.AudioContext || window.webkitAudioContext;
+      audioCtx   = new AC();
       masterGain = audioCtx.createGain();
       masterGain.connect(audioCtx.destination);
       masterGain.gain.value = muted ? 0 : 1;
     }
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    audioUnlocked = true;
+    // suspended状態を同期的に解除（Safariはこれが必須）
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().then(() => { audioUnlocked = true; });
+    } else {
+      audioUnlocked = true;
+    }
     return true;
   }
 
@@ -218,29 +223,44 @@
   }
 
   function toggleMute() {
+    ensureAudio(); // ミュートボタンタップでも解除
     muted = !muted;
     if (masterGain) masterGain.gain.value = muted ? 0 : 1;
     const btn = document.getElementById('btnMute');
     btn.textContent = muted ? '🔇' : '🔊';
     btn.classList.toggle('muted', muted);
+    // ミュート解除時に現在のシーンの音を開始
+    if (!muted) {
+      if (scene==='bird')  startBirdSong(1);
+      if (scene==='bird2') startBirdSong(2);
+    }
   }
 
   function playTone(freq, startDelay, duration, type = 'sine', vol = 0.18) {
-    if (!audioCtx || !audioUnlocked) return;
-    const now  = audioCtx.currentTime + startDelay;
-    const osc  = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain);
-    gain.connect(masterGain);
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, now);
-    osc.frequency.exponentialRampToValueAtTime(freq * 1.5, now + duration * 0.5);
-    osc.frequency.exponentialRampToValueAtTime(freq * 1.2, now + duration);
-    gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(vol, now + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-    osc.start(now);
-    osc.stop(now + duration + 0.05);
+    if (!audioCtx) return;
+    // AudioContextがrunningになってから鳴らす
+    const doPlay = () => {
+      if (audioCtx.state !== 'running') return;
+      const now  = audioCtx.currentTime + startDelay;
+      const osc  = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(masterGain);
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, now);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.5, now + duration * 0.5);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.2, now + duration);
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(vol, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      osc.start(now);
+      osc.stop(now + duration + 0.05);
+    };
+    if (audioCtx.state === 'running') {
+      doPlay();
+    } else {
+      audioCtx.resume().then(doPlay);
+    }
   }
 
   function birdSong() {
@@ -288,6 +308,8 @@
 
   function setScene(s) {
     scene = s;
+    // ボタンタップのコールスタック内でAudioContext解除（Safari必須）
+    ensureAudio();
     ['bird','bird2','car'].forEach(id => {
       document.getElementById('btn' + id.charAt(0).toUpperCase() + id.slice(1))
         .classList.toggle('active', s === id);
