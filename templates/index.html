@@ -232,24 +232,20 @@
     src.connect(audioCtx.destination);
     src.start(0);
 
-    // デバッグ情報を画面上部に表示
-    const dbg = document.getElementById('debugInfo');
-    dbg.style.display = 'block';
-    const log = (msg) => { dbg.innerHTML += msg + '<br>'; };
-    log(`protocol: ${location.protocol}`);
-    log(`AC exists: ${!!AC}`);
-    log(`state直後: ${audioCtx.state}`);
-    setTimeout(() => log(`state 300ms後: ${audioCtx.state}`), 300);
-    setTimeout(() => log(`state 1s後: ${audioCtx.state}`), 1000);
-
     // オーバーレイを消す
     document.getElementById('startOverlay').style.display = 'none';
+    document.getElementById('debugInfo').style.display = 'none';
 
-    // 鳥シーンなら即さえずり開始
-    if (scene === 'bird') {
-      log('startBirdSong呼び出し');
-      startBirdSong(1);
-    }
+    // running になってから音を開始（Safariは生成直後suspended）
+    const waitAndStart = () => {
+      if (audioCtx.state === 'running') {
+        if (scene === 'bird')  startBirdSong(1);
+        if (scene === 'bird2') startBirdSong(2);
+      } else {
+        audioCtx.resume().then(waitAndStart);
+      }
+    };
+    waitAndStart();
   }
 
   function toggleMute() {
@@ -266,9 +262,7 @@
   }
 
   function playTone(freq, startDelay, duration, type = 'sine', vol = 0.18) {
-    const dbg = document.getElementById('debugInfo');
-    if (!audioCtx) { dbg.innerHTML += `playTone: audioCtx null<br>`; return; }
-    if (audioCtx.state !== 'running') { dbg.innerHTML += `playTone: state=${audioCtx.state}<br>`; return; }
+    if (!audioCtx || audioCtx.state !== 'running') return;
     const now  = audioCtx.currentTime + startDelay;
     const osc  = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
