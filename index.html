@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>ワイヤーフレーム アニメ</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0a0a1a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: sans-serif;
+      overflow-x: hidden;
+    }
+    h1 {
+      color: #7af;
+      font-size: 1rem;
+      letter-spacing: 0.2em;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      opacity: 0.7;
+      position: relative;
+      z-index: 10;
+    }
+    .canvas-wrap {
+      position: relative;
+      max-width: 100%;
+    }
+    /* カメラ映像（AR背景） */
+    #video {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      border-radius: 12px;
+      display: none;
+    }
+    canvas {
+      border: 1px solid #1a2a4a;
+      border-radius: 12px;
+      background: #050510;
+      max-width: 100%;
+      touch-action: none;
+      display: block;
+      position: relative;
+      z-index: 2;
+    }
+    /* ARモード時はcanvasを半透明に */
+    canvas.ar-mode { background: transparent; }
+    .controls {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+      position: relative;
+      z-index: 10;
+    }
+    button {
+      background: transparent;
+      border: 1px solid #7af;
+      color: #7af;
+      padding: 7px 16px;
+      border-radius: 20px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      transition: background 0.2s;
+    }
+    button:hover { background: #1a3a6a; }
+    button.active { background: #1a3a6a; }
+    button.mute-btn {
+      border-color: #a8d8a8;
+      color: #a8d8a8;
+      padding: 7px 12px;
+      font-size: 1rem;
+    }
+    button.mute-btn.muted {
+      border-color: #f88;
+      color: #f88;
+    }
+    .qr-panel {
+      display: none;
+      margin-top: 12px;
+      text-align: center;
+      position: relative;
+      z-index: 10;
+    }
+    .qr-panel p { color: #7af; font-size: 0.75rem; letter-spacing: 0.1em; margin-bottom: 8px; }
+    .qr-panel img { width: 180px; height: 180px; border-radius: 8px; border: 1px solid #1a2a4a; }
+  </style>
+</head>
+<body>
+  <h1>Wireframe Animation</h1>
+  <div class="canvas-wrap" id="canvasWrap">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="c"></canvas>
+  </div>
+  <div class="controls" id="controls">
+    <button id="btnBird"  onclick="setScene('bird')">🐦 鳥さん</button>
+    <button id="btnBird2" onclick="setScene('bird2')">🐦 鳥さん２</button>
+    <button id="btnCar"   onclick="setScene('car')">🚗 クルマ</button>
+    <button id="btnMute"  class="mute-btn" onclick="toggleMute()">🔊</button>
+    <button onclick="toggleAR()" id="btnAR">📷 AR</button>
+    <button onclick="toggleQR()">📱 QR</button>
+  </div>
+  <div class="qr-panel" id="qrPanel">
+    <p>スマホでスキャン → {{ qr_url }}</p>
+    <img src="/qr.png" alt="QR Code" />
+  </div>
+
+  <script>
+  // =============================================
+  //  Canvas & resize
+  // =============================================
+  const canvas = document.getElementById('c');
+  const ctx    = canvas.getContext('2d');
+  let CW = 360, CH = 480;
+
+  function resizeCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    const w   = Math.min(360, window.innerWidth - 24);
+    const h   = Math.round(w * 4 / 3);
+    canvas.style.width  = w + 'px';
+    canvas.style.height = h + 'px';
+    canvas.width  = w * dpr;
+    canvas.height = h * dpr;
+    ctx.scale(dpr, dpr);
+    CW = w; CH = h;
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  // =============================================
+  //  AR camera background
+  // =============================================
+  const video = document.getElementById('video');
+  let arActive = false;
+
+  async function toggleAR() {
+    if (!arActive) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }, audio: false
+        });
+        video.srcObject = stream;
+        video.style.display = 'block';
+        canvas.classList.add('ar-mode');
+        arActive = true;
+        document.getElementById('btnAR').classList.add('active');
+      } catch(e) {
+        alert('カメラへのアクセスが許可されませんでした');
+      }
+    } else {
+      if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+      video.style.display = 'none';
+      canvas.classList.remove('ar-mode');
+      arActive = false;
+      document.getElementById('btnAR').classList.remove('active');
+    }
+  }
+
+  // =============================================
+  //  Web Audio — スマホ対応強化版
+  // =============================================
+  let audioCtx = null;
+  let muted    = false;
+  let masterGain = null;
+
+  function ensureAudio() {
+    if (!audioCtx) {
+      audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = audioCtx.createGain();
+      masterGain.connect(audioCtx.destination);
+      masterGain.gain.value = muted ? 0 : 1;
+    }
+    // スマホでsuspendされていたら再開
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  function toggleMute() {
+    muted = !muted;
+    if (masterGain) masterGain.gain.value = muted ? 0 : 1;
+    const btn = document.getElementById('btnMute');
+    btn.textContent = muted ? '🔇' : '🔊';
+    btn.classList.toggle('muted', muted);
+  }
+
+  function playTone(freq, startDelay, duration, type = 'sine', vol = 0.18) {
+    if (!audioCtx) return;
+    const now  = audioCtx.currentTime + startDelay;
+    const osc  = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(masterGain);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, now);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.5, now + duration * 0.5);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.2, now + duration);
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(vol, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    osc.start(now);
+    osc.stop(now + duration + 0.05);
+  }
+
+  function birdSong() {
+    ensureAudio();
+    playTone(2800, 0.00, 0.18);
+    playTone(3200, 0.13, 0.16);
+    playTone(2600, 0.32, 0.18);
+    playTone(3000, 0.45, 0.16);
+  }
+
+  // bird2用（少し違うさえずり）
+  function birdSong2() {
+    ensureAudio();
+    playTone(3400, 0.00, 0.12);
+    playTone(2900, 0.10, 0.14);
+    playTone(3600, 0.22, 0.10);
+    playTone(3100, 0.30, 0.18);
+    playTone(2700, 0.46, 0.20);
+  }
+
+  let birdTimer  = null;
+  let bird2Timer = null;
+
+  function startBirdSong(which) {
+    const fn    = which === 2 ? birdSong2 : birdSong;
+    const ref   = which === 2 ? 'bird2Timer' : 'birdTimer';
+    if (window[ref]) return;
+    fn();
+    window[ref] = setInterval(() => {
+      const sc = which === 2 ? 'bird2' : 'bird';
+      if (scene === sc) fn(); else stopBirdSong(which);
+    }, 2400);
+  }
+  function stopBirdSong(which) {
+    const ref = which === 2 ? 'bird2Timer' : 'birdTimer';
+    clearInterval(window[ref]);
+    window[ref] = null;
+  }
+
+  // =============================================
+  //  Scene state
+  // =============================================
+  let t     = 0;
+  let scene = 'bird';
+
+  function setScene(s) {
+    scene = s;
+    ['bird','bird2','car'].forEach(id => {
+      document.getElementById('btn' + id.charAt(0).toUpperCase() + id.slice(1))
+        .classList.toggle('active', s === id);
+    });
+    if (s === 'bird')  startBirdSong(1);
+    else               stopBirdSong(1);
+    if (s === 'bird2') startBirdSong(2);
+    else               stopBirdSong(2);
+  }
+  // 初期ボタン状態
+  document.getElementById('btnBird').classList.add('active');
+
+  // =============================================
+  //  Drawing helpers
+  // =============================================
+  function line(x1,y1,x2,y2){ ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); }
+  function circle(x,y,r){ ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.stroke(); }
+  function fcircle(x,y,r){ ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); }
+
+  // =============================================
+  //  BIRD 1 — ワイヤーフレーム
+  // =============================================
+  function drawBird(t) {
+    const cx   = CW/2 + Math.sin(t*0.7)*CW*0.18;
+    const cy   = CH/2 + Math.sin(t*1.1)*CH*0.12;
+    const flap = Math.sin(t*4)*28;
+    const tilt = Math.sin(t*0.7)*8;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(tilt * Math.PI/180);
+    ctx.shadowColor = '#7af'; ctx.shadowBlur = 10;
+    ctx.strokeStyle = '#7af'; ctx.lineWidth = 1.5;
+
+    ctx.save(); ctx.scale(1.6,1); circle(0,0,14); ctx.restore();
+    circle(20,-8,8);
+    line(27,-8,36,-6); line(27,-8,36,-10); line(36,-6,36,-10);
+    ctx.fillStyle='#7af'; fcircle(22,-10,2);
+    line(-22,0,-34,-6); line(-22,0,-34,6); line(-34,-6,-34,6);
+
+    ctx.beginPath(); ctx.moveTo(-5,-2);
+    ctx.quadraticCurveTo(-10,-flap-20,-30,-flap-10);
+    ctx.quadraticCurveTo(-20,-flap+5,-5,8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-5,2);
+    ctx.quadraticCurveTo(-10,flap+20,-30,flap+10);
+    ctx.quadraticCurveTo(-20,flap-5,-5,-8); ctx.stroke();
+
+    const ls=Math.sin(t*4)*4;
+    line(0,12,-4,22+ls); line(-4,22+ls,-10,28+ls); line(-4,22+ls,0,28+ls);
+    line(6,12,10,22-ls); line(10,22-ls,4,28-ls);   line(10,22-ls,14,28-ls);
+
+    const na = 0.4+0.6*Math.abs(Math.sin(t*5));
+    ctx.globalAlpha=na; ctx.fillStyle='#adf';
+    ctx.font='14px sans-serif';
+    ctx.fillText('♪',30,-22); ctx.fillText('♫',44,-32);
+    ctx.globalAlpha=1;
+    ctx.restore();
+
+    ctx.shadowBlur=4; ctx.strokeStyle='#3a6a9a'; ctx.lineWidth=1;
+    for(let i=0;i<12;i++){
+      const sx=(i*137+t*8)%CW, sy=(i*97+t*5)%CH;
+      ctx.beginPath(); ctx.arc(sx,sy,1,0,Math.PI*2); ctx.stroke();
+    }
+  }
+
+  // =============================================
+  //  BIRD 2 — 青塗りつぶし、ランダム飛行
+  // =============================================
+  // 飛行パターン定義（画面外→飛び回る→画面外）
+  const PATTERNS = [
+    // 左から入って右へ抜ける
+    { enter: ()=>({x:-60, y:CH*0.4}),  exit: ()=>({x:CW+60, y:CH*0.35}),
+      mid: ()=>[{x:CW*0.3,y:CH*0.25},{x:CW*0.6,y:CH*0.55},{x:CW*0.8,y:CH*0.3}] },
+    // 上から入って下へ抜ける
+    { enter: ()=>({x:CW*0.6, y:-60}),  exit: ()=>({x:CW*0.3, y:CH+60}),
+      mid: ()=>[{x:CW*0.7,y:CH*0.2},{x:CW*0.2,y:CH*0.5},{x:CW*0.5,y:CH*0.75}] },
+    // 右上から入って左下へ
+    { enter: ()=>({x:CW+60, y:-60}),   exit: ()=>({x:-60, y:CH+60}),
+      mid: ()=>[{x:CW*0.75,y:CH*0.15},{x:CW*0.4,y:CH*0.4},{x:CW*0.15,y:CH*0.7}] },
+    // 下から入って上へ抜ける
+    { enter: ()=>({x:CW*0.4, y:CH+60}),exit: ()=>({x:CW*0.7, y:-60}),
+      mid: ()=>[{x:CW*0.3,y:CH*0.8},{x:CW*0.6,y:CH*0.5},{x:CW*0.8,y:CH*0.25}] },
+    // 左上から入ってぐるっと右下へ
+    { enter: ()=>({x:-60, y:-60}),     exit: ()=>({x:CW+60, y:CH+60}),
+      mid: ()=>[{x:CW*0.2,y:CH*0.15},{x:CW*0.7,y:CH*0.3},{x:CW*0.5,y:CH*0.65},{x:CW*0.8,y:CH*0.8}] },
+  ];
+
+  let b2State = 'idle'; // idle | flying
+  let b2Path  = [];     // スプライン制御点
+  let b2u     = 0;      // 0→1 進行度
+  let b2Speed = 0.004;
+  let b2IdleTimer = 0;
+  let b2Flap  = 0;
+
+  function startB2Flight() {
+    const pat = PATTERNS[Math.floor(Math.random()*PATTERNS.length)];
+    const enter = pat.enter();
+    const exit  = pat.exit();
+    const mids  = pat.mid();
+    b2Path  = [enter, ...mids, exit];
+    b2u     = 0;
+    b2Speed = 0.003 + Math.random()*0.003;
+    b2State = 'flying';
+    startBirdSong(2);
+  }
+
+  // カットムル・ロムスプライン補間
+  function catmullRom(pts, u) {
+    const n   = pts.length - 1;
+    const seg = Math.min(Math.floor(u * n), n - 1);
+    const t   = u * n - seg;
+    const p0  = pts[Math.max(seg-1, 0)];
+    const p1  = pts[seg];
+    const p2  = pts[Math.min(seg+1, n)];
+    const p3  = pts[Math.min(seg+2, n)];
+    return {
+      x: 0.5*((2*p1.x)+(-p0.x+p2.x)*t+(2*p0.x-5*p1.x+4*p2.x-p3.x)*t*t+(-p0.x+3*p1.x-3*p2.x+p3.x)*t*t*t),
+      y: 0.5*((2*p1.y)+(-p0.y+p2.y)*t+(2*p0.y-5*p1.y+4*p2.y-p3.y)*t*t+(-p0.y+3*p1.y-3*p2.y+p3.y)*t*t*t),
+    };
+  }
+
+  function drawBird2(t) {
+    b2Flap += 0.18;
+
+    if (b2State === 'idle') {
+      b2IdleTimer++;
+      if (b2IdleTimer > 80 + Math.random()*60) {
+        b2IdleTimer = 0;
+        startB2Flight();
+      }
+      return;
+    }
+
+    b2u += b2Speed;
+    if (b2u >= 1) {
+      b2State = 'idle';
+      b2IdleTimer = 0;
+      stopBirdSong(2);
+      return;
+    }
+
+    const pos  = catmullRom(b2Path, b2u);
+    // 進行方向
+    const pos2 = catmullRom(b2Path, Math.min(b2u+0.01,1));
+    const angle = Math.atan2(pos2.y-pos.y, pos2.x-pos.x);
+
+    // フェードイン/アウト
+    const fade = b2u < 0.08 ? b2u/0.08 : b2u > 0.92 ? (1-b2u)/0.08 : 1;
+    ctx.globalAlpha = fade;
+
+    ctx.save();
+    ctx.translate(pos.x, pos.y);
+    ctx.rotate(angle);
+
+    const flapAng = Math.sin(b2Flap) * 0.6; // 羽ばたき角度（ラジアン）
+    const bodyR   = 18;
+
+    // 影（グロー）
+    ctx.shadowColor = '#4af';
+    ctx.shadowBlur  = 16;
+
+    // ---- 胴体 ----
+    ctx.fillStyle = '#2266cc';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, bodyR*1.5, bodyR*0.7, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // ---- 頭 ----
+    ctx.fillStyle = '#1a55bb';
+    ctx.beginPath();
+    ctx.arc(bodyR*1.1, -bodyR*0.3, bodyR*0.6, 0, Math.PI*2);
+    ctx.fill();
+
+    // ---- くちばし ----
+    ctx.fillStyle = '#ffcc44';
+    ctx.beginPath();
+    ctx.moveTo(bodyR*1.65, -bodyR*0.3);
+    ctx.lineTo(bodyR*2.1,  -bodyR*0.15);
+    ctx.lineTo(bodyR*1.65, -bodyR*0.05);
+    ctx.closePath(); ctx.fill();
+
+    // ---- 目 ----
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(bodyR*1.2, -bodyR*0.45, 4, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(bodyR*1.25, -bodyR*0.45, 2, 0, Math.PI*2); ctx.fill();
+
+    // ---- 上翼 ----
+    ctx.save();
+    ctx.rotate(-flapAng);
+    ctx.fillStyle = '#3388ee';
+    ctx.beginPath();
+    ctx.moveTo(0, -4);
+    ctx.quadraticCurveTo(-bodyR*0.5, -bodyR*1.8, -bodyR*2.0, -bodyR*0.8);
+    ctx.quadraticCurveTo(-bodyR*1.2, -bodyR*0.2, 0, 4);
+    ctx.closePath(); ctx.fill();
+    // 翼の羽模様
+    ctx.strokeStyle = '#5aaaff';
+    ctx.lineWidth = 0.8;
+    ctx.globalAlpha = fade * 0.5;
+    for(let i=1;i<=3;i++){
+      const wx = -bodyR*0.4*i;
+      const wy = -bodyR*0.4*i - flapAng*bodyR*0.5;
+      ctx.beginPath();
+      ctx.moveTo(wx*0.3, wy*0.1);
+      ctx.lineTo(wx, wy);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = fade;
+    ctx.restore();
+
+    // ---- 下翼（ミラー） ----
+    ctx.save();
+    ctx.rotate(flapAng);
+    ctx.fillStyle = '#2277dd';
+    ctx.beginPath();
+    ctx.moveTo(0, 4);
+    ctx.quadraticCurveTo(-bodyR*0.5, bodyR*1.8, -bodyR*2.0, bodyR*0.8);
+    ctx.quadraticCurveTo(-bodyR*1.2, bodyR*0.2, 0, -4);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    // ---- 尾羽 ----
+    ctx.fillStyle = '#1a55bb';
+    ctx.beginPath();
+    ctx.moveTo(-bodyR*1.3, 0);
+    ctx.lineTo(-bodyR*2.2, -bodyR*0.5);
+    ctx.lineTo(-bodyR*2.0, 0);
+    ctx.lineTo(-bodyR*2.2,  bodyR*0.5);
+    ctx.closePath(); ctx.fill();
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+
+    // 音符
+    if (b2u > 0.05 && b2u < 0.95) {
+      const na = 0.5+0.5*Math.abs(Math.sin(t*6));
+      ctx.globalAlpha = na * fade;
+      ctx.fillStyle = '#88ccff';
+      ctx.font = '13px sans-serif';
+      ctx.fillText('♪', pos.x+24, pos.y-24);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // =============================================
+  //  MR-S — 斜め左上視点、奥から手前へ
+  // =============================================
+  function drawMRS3D(cx, cy, scale, wheelSpin, heading) {
+    const s = scale;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(heading);
+
+    // 斜め視点のための軽いskew（左上から見た感じ）
+    ctx.transform(1, -0.12, 0, 1, 0, 0);
+
+    ctx.shadowColor = '#aef';
+    ctx.shadowBlur  = 12 * s;
+    ctx.strokeStyle = '#aef';
+    ctx.lineWidth   = 1.6;
+
+    // ---- ボディアウトライン ----
+    ctx.beginPath();
+    ctx.moveTo(-52*s, 8*s);
+    ctx.lineTo( 50*s, 8*s);
+    ctx.quadraticCurveTo(58*s, 8*s, 58*s, 0);
+    ctx.lineTo(58*s, -10*s);
+    ctx.quadraticCurveTo(58*s, -18*s, 48*s, -20*s);
+    ctx.lineTo(28*s, -38*s);
+    ctx.lineTo(-14*s, -40*s);
+    ctx.lineTo(-30*s, -28*s);
+    ctx.lineTo(-38*s, -26*s);
+    ctx.quadraticCurveTo(-56*s, -24*s, -58*s, -14*s);
+    ctx.quadraticCurveTo(-60*s, 0, -52*s, 8*s);
+    ctx.closePath();
+    ctx.stroke();
+
+    // ---- 屋根面（斜め視点で上面を少し見せる） ----
+    ctx.strokeStyle = '#8ac';
+    ctx.lineWidth   = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(28*s, -38*s);
+    ctx.lineTo(32*s, -46*s);
+    ctx.lineTo(-10*s, -48*s);
+    ctx.lineTo(-14*s, -40*s);
+    ctx.stroke();
+
+    // ---- キャビン ----
+    ctx.strokeStyle = '#aef';
+    ctx.lineWidth   = 1.4;
+    line(28*s,-38*s, 32*s,-20*s);
+    line(-14*s,-40*s,-16*s,-22*s);
+    line(32*s,-20*s,-16*s,-22*s);
+    line(32*s,-20*s, 30*s, 8*s);
+    line(-16*s,-22*s,-18*s, 8*s);
+    // ドアハンドル
+    line(10*s,-14*s,18*s,-14*s);
+    line(10*s,-14*s,10*s,-11*s);
+    line(18*s,-14*s,18*s,-11*s);
+
+    // ---- フロントライト ----
+    ctx.shadowColor='#fff8a0'; ctx.shadowBlur=14*s;
+    ctx.strokeStyle='#fff8a0';
+    circle(50*s,-12*s,5*s);
+    line(55*s,-14*s,64*s,-16*s);
+    line(55*s,-12*s,65*s,-12*s);
+    line(55*s,-10*s,64*s,-8*s);
+
+    // ---- テールライト ----
+    ctx.shadowColor='#f87'; ctx.shadowBlur=10*s;
+    ctx.strokeStyle='#f87';
+    ctx.beginPath();
+    ctx.arc(-54*s,-8*s,5*s,-Math.PI*0.5,Math.PI*0.5);
+    ctx.stroke();
+
+    // ---- ホイール ----
+    ctx.shadowColor='#aef'; ctx.shadowBlur=8*s;
+    ctx.strokeStyle='#aef';
+    const wr=14*s, wy=10*s;
+    function drawWheel(wx){
+      ctx.lineWidth=2.5*s; circle(wx,wy,wr);
+      ctx.lineWidth=1.4;   circle(wx,wy,wr*0.72);
+      for(let i=0;i<5;i++){
+        const a=wheelSpin+i*Math.PI*2/5;
+        line(wx,wy, wx+Math.cos(a)*wr*0.68, wy+Math.sin(a)*wr*0.68);
+      }
+      ctx.fillStyle='#aef'; fcircle(wx,wy,3*s);
+    }
+    ctx.strokeStyle='#aef';
+    drawWheel(-34*s);
+    drawWheel( 38*s);
+
+    ctx.restore();
+  }
+
+  function drawCar(t) {
+    // 背景グリッド（パース）
+    ctx.shadowBlur=0;
+    ctx.strokeStyle='#0d1a2a'; ctx.lineWidth=0.5;
+    const gy = CH*0.75;
+    for(let i=0;i<=8;i++){
+      const x=(i/8)*CW;
+      ctx.beginPath(); ctx.moveTo(x,gy); ctx.lineTo(CW/2,CH*0.05); ctx.stroke();
+    }
+    for(let j=1;j<=6;j++){
+      const y=gy-j*(gy*0.14);
+      const f=j/7;
+      ctx.beginPath(); ctx.moveTo(CW/2-(CW/2)*f,y); ctx.lineTo(CW/2+(CW/2)*f,y); ctx.stroke();
+    }
+
+    // 道路ライン
+    ctx.strokeStyle='#1a3a5a'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(CW,gy); ctx.stroke();
+
+    // 車の動き: u=0(奥・小) → u=1(手前・大) → フェードアウト
+    const period = 4.0;
+    const u = (t % period) / period;
+
+    // スケール: 奥=0.25、手前=1.1
+    const scale = 0.25 + u * 0.85;
+    // 位置: 奥は画面中央上、手前は画面中央下
+    const cx = CW * 0.48 - u * CW * 0.05; // わずかに左へ（左コーナー感）
+    const cy = CH * 0.18 + u * CH * 0.52;
+    // フェードアウト（手前に来たら消える）
+    const alpha = u > 0.85 ? 1-(u-0.85)/0.15 : 1;
+    // 進行方向（奥から手前、わずかに左向き）
+    const heading = -0.08 + u * 0.05;
+
+    ctx.globalAlpha = alpha;
+    drawMRS3D(cx, cy, scale, t*6, heading);
+    ctx.globalAlpha = 1;
+
+    // ラベル
+    ctx.shadowBlur=0; ctx.fillStyle='#4a7aaa';
+    ctx.font='10px monospace';
+    ctx.fillText('TOYOTA MR-S', 8, CH-10);
+  }
+
+  // =============================================
+  //  Main loop
+  // =============================================
+  function draw() {
+    if (arActive) {
+      ctx.clearRect(0,0,CW,CH);
+    } else {
+      const grad = ctx.createLinearGradient(0,0,0,CH);
+      grad.addColorStop(0,'#050510');
+      grad.addColorStop(1,'#0a0a20');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0,0,CW,CH);
+    }
+
+    if      (scene==='bird')  drawBird(t);
+    else if (scene==='bird2') drawBird2(t);
+    else                      drawCar(t);
+
+    t += 0.016;
+    requestAnimationFrame(draw);
+  }
+  draw();
+
+  // =============================================
+  //  UI
+  // =============================================
+  function toggleQR() {
+    const p = document.getElementById('qrPanel');
+    p.style.display = p.style.display==='none' ? 'block' : 'none';
+  }
+
+  // 最初のタップでAudioContext解除（スマホ必須）
+  function unlockAudio() {
+    ensureAudio();
+    if (scene==='bird')  startBirdSong(1);
+    if (scene==='bird2') startBirdSong(2);
+  }
+  document.addEventListener('touchstart', unlockAudio, { once: true });
+  document.addEventListener('click',      unlockAudio, { once: true });
+  </script>
+</body>
+</html>
