@@ -225,27 +225,42 @@
     masterGain.connect(audioCtx.destination);
     masterGain.gain.value = 1;
 
-    // 無音バッファを即再生してSafariのロックを解除
     const buf = audioCtx.createBuffer(1, 1, 22050);
     const src = audioCtx.createBufferSource();
     src.buffer = buf;
     src.connect(audioCtx.destination);
     src.start(0);
 
-    // オーバーレイを消す
     document.getElementById('startOverlay').style.display = 'none';
-    document.getElementById('debugInfo').style.display = 'none';
 
-    // running になってから音を開始（Safariは生成直後suspended）
-    const waitAndStart = () => {
-      if (audioCtx.state === 'running') {
-        if (scene === 'bird')  startBirdSong(1);
-        if (scene === 'bird2') startBirdSong(2);
-      } else {
-        audioCtx.resume().then(waitAndStart);
+    const dbg = document.getElementById('debugInfo');
+    dbg.style.display = 'block';
+    const log = (msg) => { dbg.innerHTML += msg + '<br>'; };
+
+    log(`生成直後 state: ${audioCtx.state}`);
+
+    audioCtx.resume().then(() => {
+      log(`resume().then state: ${audioCtx.state}`);
+      log(`scene: ${scene}`);
+      // テスト音を直接鳴らす（startBirdSongを通さず）
+      try {
+        const osc  = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+        osc.start(audioCtx.currentTime);
+        osc.stop(audioCtx.currentTime + 0.5);
+        log('テスト音 start OK');
+      } catch(e) {
+        log('テスト音 ERROR: ' + e.message);
       }
-    };
-    waitAndStart();
+      // 通常の鳥の声も開始
+      if (scene === 'bird')  startBirdSong(1);
+      if (scene === 'bird2') startBirdSong(2);
+    });
   }
 
   function toggleMute() {
